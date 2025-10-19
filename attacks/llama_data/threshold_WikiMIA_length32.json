@@ -1,0 +1,181 @@
+{
+  "data_name": "WikiMIA_length32",
+  "alpha": 0.01,
+  "counts": {
+    "total": 100,
+    "member": 52,
+    "non_member": 48
+  },
+  "items": [
+    {
+      "metric": "mink++_0.1",
+      "direction": "+",
+      "AUROC": 0.624198717948718,
+      "FPR@TPR=95%": 0.7291666666666666,
+      "TPR@FPR=5%": 0.038461538461538464,
+      "threshold_bestJ": -3.361396312713623,
+      "threshold_fpr_alpha": -0.5279025721549985,
+      "Youden_J": 0.27083333333333337
+    },
+    {
+      "metric": "mink_0.1",
+      "direction": "+",
+      "AUROC": 0.40344551282051283,
+      "FPR@TPR=95%": 0.9791666666666666,
+      "TPR@FPR=5%": 0.07692307692307693,
+      "threshold_bestJ": -4.322186470031738,
+      "threshold_fpr_alpha": -4.091412677764892,
+      "Youden_J": 0.03685897435897437
+    },
+    {
+      "metric": "mink++_0.2",
+      "direction": "+",
+      "AUROC": 0.6310096153846154,
+      "FPR@TPR=95%": 0.7708333333333334,
+      "TPR@FPR=5%": 0.038461538461538464,
+      "threshold_bestJ": -1.5191963911056519,
+      "threshold_fpr_alpha": -0.23245282202959047,
+      "Youden_J": 0.28525641025641024
+    },
+    {
+      "metric": "mink_0.2",
+      "direction": "+",
+      "AUROC": 0.42708333333333337,
+      "FPR@TPR=95%": 0.9583333333333334,
+      "TPR@FPR=5%": 0.057692307692307696,
+      "threshold_bestJ": -6.706331729888916,
+      "threshold_fpr_alpha": -2.9695534133911132,
+      "Youden_J": 0.05128205128205121
+    },
+    {
+      "metric": "mink++_0.3",
+      "direction": "+",
+      "AUROC": 0.6217948717948718,
+      "FPR@TPR=95%": 0.7916666666666666,
+      "TPR@FPR=5%": 0.038461538461538464,
+      "threshold_bestJ": -1.1323421001434326,
+      "threshold_fpr_alpha": -0.13871029302477828,
+      "Youden_J": 0.28044871794871795
+    },
+    {
+      "metric": "mink_0.3",
+      "direction": "+",
+      "AUROC": 0.4362980769230769,
+      "FPR@TPR=95%": 0.9375,
+      "TPR@FPR=5%": 0.057692307692307696,
+      "threshold_bestJ": -6.262738227844238,
+      "threshold_fpr_alpha": -2.185495371818542,
+      "Youden_J": 0.04166666666666663
+    },
+    {
+      "metric": "mink++_0.4",
+      "direction": "+",
+      "AUROC": 0.6270032051282052,
+      "FPR@TPR=95%": 0.7708333333333334,
+      "TPR@FPR=5%": 0.038461538461538464,
+      "threshold_bestJ": -0.8944112658500671,
+      "threshold_fpr_alpha": -0.08551480606198303,
+      "Youden_J": 0.2596153846153846
+    },
+    {
+      "metric": "mink_0.4",
+      "direction": "+",
+      "AUROC": 0.4463141025641026,
+      "FPR@TPR=95%": 0.9375,
+      "TPR@FPR=5%": 0.057692307692307696,
+      "threshold_bestJ": -5.34679651260376,
+      "threshold_fpr_alpha": -1.757691224813461,
+      "Youden_J": 0.04166666666666663
+    },
+    {
+      "metric": "mink++_0.5",
+      "direction": "+",
+      "AUROC": 0.6326121794871795,
+      "FPR@TPR=95%": 0.75,
+      "TPR@FPR=5%": 0.038461538461538464,
+      "threshold_bestJ": -0.7397846579551697,
+      "threshold_fpr_alpha": -0.045269873682409464,
+      "Youden_J": 0.23717948717948723
+    },
+    {
+      "metric": "mink_0.5",
+      "direction": "+",
+      "AUROC": 0.4547275641025641,
+      "FPR@TPR=95%": 0.9375,
+      "TPR@FPR=5%": 0.057692307692307696,
+      "threshold_bestJ": -4.476103782653809,
+      "threshold_fpr_alpha": -1.43692090511322,
+      "Youden_J": 0.043269230769230727
+    },
+    {
+      "metric": "mink++_0.6",
+      "direction": "+",
+      "AUROC": 0.6390224358974359,
+      "FPR@TPR=95%": 0.7708333333333334,
+      "TPR@FPR=5%": 0.057692307692307696,
+      "threshold_bestJ": -0.5989190936088562,
+      "threshold_fpr_alpha": -0.010349767785519298,
+      "Youden_J": 0.23717948717948723
+    },
+    {
+      "metric": "mink_0.6",
+      "direction": "+",
+      "AUROC": 0.4499198717948718,
+      "FPR@TPR=95%": 0.9375,
+      "TPR@FPR=5%": 0.057692307692307696,
+      "threshold_bestJ": -3.8526182174682617,
+      "threshold_fpr_alpha": -1.2211890769004818,
+      "Youden_J": 0.043269230769230727
+    },
+    {
+      "metric": "perplexity_variance",
+      "direction": "-",
+      "AUROC": 0.4110576923076923,
+      "FPR@TPR=95%": 0.9166666666666666,
+      "TPR@FPR=5%": 0.038461538461538464,
+      "threshold_bestJ": -7.963364601135254,
+      "threshold_fpr_alpha": -8.557312707901001,
+      "Youden_J": 0.044871794871794934
+    },
+    {
+      "metric": "perplexity_std",
+      "direction": "-",
+      "AUROC": 0.4110576923076923,
+      "FPR@TPR=95%": 0.9166666666666666,
+      "TPR@FPR=5%": 0.038461538461538464,
+      "threshold_bestJ": -2.821943521499634,
+      "threshold_fpr_alpha": -2.9247090363502504,
+      "Youden_J": 0.044871794871794934
+    },
+    {
+      "metric": "perplexity_range",
+      "direction": "-",
+      "AUROC": 0.4823717948717948,
+      "FPR@TPR=95%": 0.8958333333333334,
+      "TPR@FPR=5%": 0.057692307692307696,
+      "threshold_bestJ": -10.800711631774902,
+      "threshold_fpr_alpha": -13.180451698303223,
+      "Youden_J": 0.09455128205128205
+    },
+    {
+      "metric": "perplexity_skewness",
+      "direction": "-",
+      "AUROC": 0.5048076923076923,
+      "FPR@TPR=95%": 0.9166666666666666,
+      "TPR@FPR=5%": 0.057692307692307696,
+      "threshold_bestJ": -1.9070380926132202,
+      "threshold_fpr_alpha": -3.8266548180580138,
+      "Youden_J": 0.09455128205128205
+    },
+    {
+      "metric": "perplexity_kurtosis",
+      "direction": "-",
+      "AUROC": 0.5344551282051283,
+      "FPR@TPR=95%": 0.9375,
+      "TPR@FPR=5%": 0.038461538461538464,
+      "threshold_bestJ": -2.891695499420166,
+      "threshold_fpr_alpha": -19.05794020652771,
+      "Youden_J": 0.13942307692307687
+    }
+  ]
+}
