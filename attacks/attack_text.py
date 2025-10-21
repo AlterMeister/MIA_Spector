@@ -88,7 +88,8 @@ class DatasetLoader:
 
 
 class ScoreCalculator:
-    def __init__(self, model: Any, tokenizer: Any, ref_model:Any=None, ref_tokenizer:Any=None):
+    """Calculates various membership inference attack scores."""
+    def __init__(self, model: Any, tokenizer: Any, ref_model: Any = None, ref_tokenizer: Any = None):
         self.model = model
         self.tokenizer = tokenizer
         self.ref_model = ref_model
@@ -114,26 +115,30 @@ class ScoreCalculator:
             return float(sc[k])
         else:
             raise ValueError(metric_group)
-
-    def calculate_scores(self, text:str) -> Dict[str, float]:
+    
+    def calculate_scores(self, text: str) -> Dict[str, float]:
+        """Calculate all scores for a given text."""
+        # Get model outputs
         input_ids = torch.tensor(self.tokenizer.encode(text)).unsqueeze(0)
         input_ids = input_ids.to(self.model.device)
-
+        
         with torch.no_grad():
             outputs = self.model(input_ids, labels=input_ids, output_hidden_states=True)
-            loss = outputs.loss
-            logits = outputs.logits
+        loss, logits = outputs[:2]
         ll = -loss.item()  # log-likelihood
-
+                
+        # Get token-level perplexities
         log_probs = F.log_softmax(logits[0, :-1], dim=-1)
         token_log_probs = log_probs.gather(dim=-1, index=input_ids).squeeze(-1)
         token_perplexities = torch.exp(-token_log_probs).to(torch.float).cpu().numpy()
 
+        # Calculate perplexity
         perplexity = torch.exp(loss).item()
 
         last_hidden_state_l2 = float(torch.norm(outputs.hidden_states[-1]).item())
         embedding_l2 = float(torch.norm(outputs.hidden_states[0]).item())
-
+        
+        # Calculate various scores
         scores = {
             'loss': ll,
             'perplexity': perplexity,
@@ -141,132 +146,125 @@ class ScoreCalculator:
             'last_hidden_state_l2': last_hidden_state_l2,
             'embedding_l2': embedding_l2
         }
-
+        
+        # Calculate Min-K% and Min-K%++ scores
         scores.update(self._calculate_mink_scores(input_ids, logits))
+        
+        # Calculate token-level perplexity relationship scores
         scores.update(self._calculate_token_perplexity_scores(input_ids, logits))
 
-        if self.ref_model and self.ref_tokenizer:
+        # Calculate reference model scores
+        if self.ref_model is not None:
             ref_input_ids = torch.tensor(self.ref_tokenizer.encode(text)).unsqueeze(0)
             ref_input_ids = ref_input_ids.to(self.ref_model.device)
-
             with torch.no_grad():
                 ref_outputs = self.ref_model(ref_input_ids, labels=ref_input_ids)
-                ref_logits = ref_outputs.logits
-                ref_loss = ref_outputs.loss
-                ref_loss = -ref_loss.item()  # log-likelihood
-
+                ref_loss, ref_logits = ref_outputs[:2]
+                ref_loss = -ref_loss.item()
+            # scores['ref_ppl_ratio'] = self._calculate_ppl_ratio(input_ids, logits, ref_input_ids, ref_logits)
+            # scores['ref_ppl_diff'] = self._calculate_ppl_diff(input_ids, logits, ref_input_ids, ref_logits)
             scores['ref_loss_ratio'] = self._calculate_loss_ratio(ll, ref_loss)
             scores['ref_loss_diff'] = self._calculate_loss_diff(ll, ref_loss)
-
+        
         return scores, token_perplexities
 
-    
-    def calculate_set_level_scores(self, dataset: List[Dict[str, str]], K: int, N: int) -> Dict[str, float]:
+    def _calculate_fourier_features(self, ppl_seq, top_n=3, high_freq_ratio=0.5):
         """
-        计算 Set-level MIA Scores。通过随机选择 K 条样本，重复 N 次来计算每组的 AUROC等指标。
-        
-        :param dataset: 数据集（每条样本是一个字典，包含 'input' 和 'label'）
-        :param K: 每组选择的样本数
-        :param N: 重复选择的次数（每次计算一组）
-        :return:
+        ppl_seq: 1D array-like, token-level perplexity sequence
+        top_n: int, number of top frequencies for主频能量比
+        high_freq_ratio: float, high frequency threshold (e.g. 0.5 means后半段为高频)
         """
-        all_scores = {key: [] for key in ['loss', 'perplexity', 'zlib', 'last_hidden_state_l2', 'embedding_l2']}
+        ppl_seq = np.asarray(ppl_seq)
+        n = len(ppl_seq)
+        if n < 2:
+            raise ValueError("ppl_seq must be at least 2 tokens long")
+        # 去均值
+        ppl_seq = ppl_seq - np.mean(ppl_seq)
+        # FFT
+        fft_vals = fft(ppl_seq)
+        fft_mags = np.abs(fft_vals)[:n//2]  # 只取正频率部分
+        total_energy = np.sum(fft_mags)
+        if total_energy == 0:
+            total_energy = 1e-8
 
-        for n in range(N):
-            random_samples = random.sample(dataset, K)
-            input_texts = [sample['input'] for sample in random_samples]
+        # 1. 主频能量比
+        topk = np.sort(fft_mags)[-top_n:]
+        main_freq_energy_ratio = np.sum(topk) / total_energy
 
-            group_scores = {key : [] for key in all_scores}
-            for text in input_texts:
-                scores, _ = self.calculate_scores(text)
-                for key in scores:
-                    group_scores[key].append(scores[key])
+        # 2. 高频能量占比
+        high_freq_start = int(n//2 * high_freq_ratio)
+        high_freq_energy = np.sum(fft_mags[high_freq_start:])
+        high_freq_energy_ratio = high_freq_energy / total_energy
 
-            for key in group_scores:
-                all_scores[key].append(np.mean(group_scores[key]))
+        # 3. 谱熵
+        p = fft_mags / np.sum(fft_mags)
+        p = p[p > 0]
+        spectral_entropy = -np.sum(p * np.log(p))
 
-        # 计算最终平均值
-        final_scores = {key: np.mean(all_scores[key]) for key in all_scores}
+        # 4. 最大幅值频率
+        max_freq_idx = np.argmax(fft_mags)
 
-        return final_scores
+        # 5. 谱质心
+        freqs = np.arange(len(fft_mags))
+        spectral_centroid = np.sum(freqs * fft_mags) / np.sum(fft_mags)
+
+        # 6. 低/高频能量比
+        low_freq_energy = np.sum(fft_mags[:high_freq_start])
+        low_high_energy_ratio = low_freq_energy / (high_freq_energy + 1e-8)
+
+        return {
+            'main_freq_energy_ratio': main_freq_energy_ratio,
+            'high_freq_energy_ratio': high_freq_energy_ratio,
+            'spectral_entropy': spectral_entropy,
+            'max_freq_idx': max_freq_idx,
+            'spectral_centroid': spectral_centroid,
+            'low_high_energy_ratio': low_high_energy_ratio
+        }
     
-
-    def _calculate_mink(self, text:str) -> Dict[str, float]:
-        """仅仅计算Mink"""
+    def calculate_neighbor_scores(self, text: str, neighbor_text_list: list[str]) -> Dict[str, float]:
+        """Calculate all scores for a given text."""
         scores = {}
-
+        # Get model outputs
         input_ids = torch.tensor(self.tokenizer.encode(text)).unsqueeze(0)
         input_ids = input_ids.to(self.model.device)
-
+        
         with torch.no_grad():
-            outputs = self.model(input_ids, labels=input_ids, output_hidden_states=True)
-            loss = outputs.loss
-            logits = outputs.logits
-        ll = -loss.item()
-        
-        # Prepare
-        input_ids = input_ids[0][1:].unsqueeze(-1)
-        probs = F.softmax(logits[0, :-1], dim=-1)
-        log_probs = F.log_softmax(logits[0, :-1], dim=-1)
-        token_log_probs = log_probs.gather(dim=-1, index=input_ids).squeeze(-1)
-        
-        # Min-K% scores
-        for ratio in MINK_RATIOS:
-            k_length = int(len(token_log_probs) * ratio)
-            topk = np.sort(token_log_probs.to(torch.float).cpu())[:k_length]
-            scores[f'mink_{ratio}'] = np.mean(topk).item()
+            outputs = self.model(input_ids, labels=input_ids)
+        loss, logits = outputs[:2]
+        ll = -loss.item()  # log-likelihood
+        perplexity = torch.exp(loss).item()
 
+        original_scores = {
+            "loss": ll,
+            "perplexity": perplexity,
+            "zlib": ll / len(zlib.compress(bytes(text, 'utf-8')))
+        }
+        original_scores.update(self._calculate_token_perplexity_scores(input_ids, logits))
+        original_scores.update(self._calculate_mink_scores(input_ids, logits))
+        
+        neighbor_scores = []
+        for neighbor_text in neighbor_text_list:
+            input_ids_neighbor = torch.tensor(self.tokenizer.encode(neighbor_text)).unsqueeze(0)
+            input_ids_neighbor = input_ids_neighbor.to(self.model.device)
+            with torch.no_grad():
+                outputs_neighbor = self.model(input_ids_neighbor, labels=input_ids_neighbor)
+            loss_neighbor, logits_neighbor = outputs_neighbor[:2]
+            ll_neighbor = -loss_neighbor.item()
+            perplexity_neighbor = torch.exp(loss_neighbor).item()
+            scores_neighbor = {
+                "loss": ll_neighbor,
+                "perplexity": perplexity_neighbor,
+                "zlib": ll_neighbor / len(zlib.compress(bytes(neighbor_text, 'utf-8')))
+            }
+            scores_neighbor.update(self._calculate_token_perplexity_scores(input_ids_neighbor, logits_neighbor))
+            scores_neighbor.update(self._calculate_mink_scores(input_ids_neighbor, logits_neighbor))
+            neighbor_scores.append(scores_neighbor)
+        
+        for key in original_scores.keys():
+            scores[f'{key}_neighbor'] = np.mean([scores_neighbor[key]-original_scores[key] for scores_neighbor in neighbor_scores]).item()
+            
         return scores
-    
-    def _calculate_mink_total(self, text:str) -> Dict[str, List]:
-        input_ids = torch.tensor(self.tokenizer.encode(text)).unsqueeze(0)
-        input_ids = input_ids.to(self.model.device)
 
-        with torch.no_grad():
-            outputs = self.model(input_ids, labels=input_ids, output_hidden_states=True)
-            loss = outputs.loss
-            logits = outputs.logits
-        ll = -loss.item()
-        
-        # Prepare
-        input_ids = input_ids[0][1:].unsqueeze(-1)
-        probs = F.softmax(logits[0, :-1], dim=-1)
-        log_probs = F.log_softmax(logits[0, :-1], dim=-1)
-        token_log_probs = log_probs.gather(dim=-1, index=input_ids).squeeze(-1)
-
-        return token_log_probs
-
-
-    def _calculate_mink_scores(self, input_ids: torch.Tensor, logits: torch.Tensor) -> Dict[str, float]:
-        """Calculate Min-K% and Min-K%++ scores."""
-        scores = {}
-        
-        # Prepare token-level probabilities
-        input_ids = input_ids[0][1:].unsqueeze(-1)
-        probs = F.softmax(logits[0, :-1], dim=-1)
-        log_probs = F.log_softmax(logits[0, :-1], dim=-1)
-        token_log_probs = log_probs.gather(dim=-1, index=input_ids).squeeze(-1)
-        
-        # Calculate statistics for Min-K%++
-        mu = (probs * log_probs).sum(-1)
-        sigma = (probs * torch.square(log_probs)).sum(-1) - torch.square(mu)
-        
-        # Min-K% scores
-        for ratio in MINK_RATIOS:
-            k_length = int(len(token_log_probs) * ratio)
-            topk = np.sort(token_log_probs.to(torch.float).cpu())[:k_length]
-            scores[f'mink_{ratio}'] = np.mean(topk).item()
-        
-        # Min-K%++ scores
-        safe_sigma = torch.clamp(sigma, min=1e-8)
-        mink_plus = (token_log_probs - mu) / safe_sigma.sqrt()
-        for ratio in MINK_RATIOS:
-            k_length = int(len(mink_plus) * ratio)
-            topk = np.sort(mink_plus.to(torch.float).cpu())[:k_length]
-            scores[f'mink++_{ratio}'] = np.mean(topk).item()
-        
-        return scores
-    
     def _calculate_loss_ratio(self, target_loss, reference_loss):
         '''
         This function takes a list of lists and returns the ratio of the mean loss to the perplexity of a reference model
@@ -308,6 +306,37 @@ class ScoreCalculator:
         
         return token_perplexities, tokens
 
+    
+    def _calculate_mink_scores(self, input_ids: torch.Tensor, logits: torch.Tensor) -> Dict[str, float]:
+        """Calculate Min-K% and Min-K%++ scores."""
+        scores = {}
+        
+        # Prepare token-level probabilities
+        input_ids = input_ids[0][1:].unsqueeze(-1)
+        probs = F.softmax(logits[0, :-1], dim=-1)
+        log_probs = F.log_softmax(logits[0, :-1], dim=-1)
+        token_log_probs = log_probs.gather(dim=-1, index=input_ids).squeeze(-1)
+        
+        # Calculate statistics for Min-K%++
+        mu = (probs * log_probs).sum(-1)
+        sigma = (probs * torch.square(log_probs)).sum(-1) - torch.square(mu)
+        
+        # Min-K% scores
+        for ratio in MINK_RATIOS:
+            k_length = int(len(token_log_probs) * ratio)
+            topk = np.sort(token_log_probs.to(torch.float).cpu())[:k_length]
+            scores[f'mink_{ratio}'] = np.mean(topk).item()
+        
+        # Min-K%++ scores
+        safe_sigma = torch.clamp(sigma, min=1e-8)
+        mink_plus = (token_log_probs - mu) / safe_sigma.sqrt()
+        for ratio in MINK_RATIOS:
+            k_length = int(len(mink_plus) * ratio)
+            topk = np.sort(mink_plus.to(torch.float).cpu())[:k_length]
+            scores[f'mink++_{ratio}'] = np.mean(topk).item()
+        
+        return scores
+    
     def _calculate_token_perplexity_scores(self, input_ids: torch.Tensor, logits: torch.Tensor) -> Dict[str, float]:
         """Calculate token-level perplexity relationship scores for MIA."""
         scores = {}
@@ -317,6 +346,12 @@ class ScoreCalculator:
         probs = F.softmax(logits[0, :-1], dim=-1)
         log_probs = F.log_softmax(logits[0, :-1], dim=-1)
         token_log_probs = log_probs.gather(dim=-1, index=input_ids).squeeze(-1)
+        
+        # # Calculate token-level perplexities with bounds checking
+        # token_perplexities = torch.exp(-token_log_probs).cpu().numpy()
+        
+        # # Clip extreme values to prevent overflow
+        # token_perplexities = np.clip(token_perplexities, 1e-10, 1e10)
 
         token_perplexities = (-token_log_probs).to(torch.float).cpu().numpy()
         
@@ -409,12 +444,14 @@ class ScoreCalculator:
         # 8. Perplexity norm1
         scores['perplexity_norm1'] = float(np.linalg.norm(token_perplexities, ord=1))
 
+        # calculate mink perplexity
         mu = (probs * log_probs).sum(-1)
         sigma = (probs * torch.square(log_probs)).sum(-1) - torch.square(mu)
 
+        # safe_sigma = torch.clamp(sigma, min=1e-8)
+        # mink_plus = (token_log_probs - mu) / safe_sigma.sqrt()
         token_log_probs_np = token_log_probs.to(torch.float).cpu().numpy()
         token_log_probs_residual = np.abs(token_log_probs_np - np.mean(token_log_probs_np))
-        '''
         for ratio in MINK_RATIOS:
             k_length = int(len(token_log_probs_residual) * ratio)
             min_topk = np.sort(token_log_probs_residual)[:k_length]
@@ -427,7 +464,6 @@ class ScoreCalculator:
             scores[f'perplexity_2_maxk++_{ratio}'] = float(np.sqrt(np.mean(np.square(max_topk))))
             scores[f'perplexity_3_maxk++_{ratio}'] = float(np.power(np.mean(np.power(max_topk, 3)), 1/3))
             scores[f'perplexity_4_maxk++_{ratio}'] = float(np.power(np.mean(np.power(max_topk, 4)), 1/4))
-        '''
 
         # ====== Fourier Features for Perplexity Sequence ======
         fft_feats = self._calculate_fourier_features(token_perplexities)
@@ -518,56 +554,3 @@ class ScoreCalculator:
             })
         
         return scores
-
-    def _calculate_fourier_features(self, ppl_seq, top_n=3, high_freq_ratio=0.5):
-        """
-        ppl_seq: 1D array-like, token-level perplexity sequence
-        top_n: int, number of top frequencies for主频能量比
-        high_freq_ratio: float, high frequency threshold (e.g. 0.5 means后半段为高频)
-        """
-        ppl_seq = np.asarray(ppl_seq)
-        n = len(ppl_seq)
-        if n < 2:
-            raise ValueError("ppl_seq must be at least 2 tokens long")
-        # 去均值
-        ppl_seq = ppl_seq - np.mean(ppl_seq)
-        # FFT
-        fft_vals = fft(ppl_seq)
-        fft_mags = np.abs(fft_vals)[:n//2]  # 只取正频率部分
-        total_energy = np.sum(fft_mags)
-        if total_energy == 0:
-            total_energy = 1e-8
-
-        # 1. 主频能量比
-        topk = np.sort(fft_mags)[-top_n:]
-        main_freq_energy_ratio = np.sum(topk) / total_energy
-
-        # 2. 高频能量占比
-        high_freq_start = int(n//2 * high_freq_ratio)
-        high_freq_energy = np.sum(fft_mags[high_freq_start:])
-        high_freq_energy_ratio = high_freq_energy / total_energy
-
-        # 3. 谱熵
-        p = fft_mags / np.sum(fft_mags)
-        p = p[p > 0]
-        spectral_entropy = -np.sum(p * np.log(p))
-
-        # 4. 最大幅值频率
-        max_freq_idx = np.argmax(fft_mags)
-
-        # 5. 谱质心
-        freqs = np.arange(len(fft_mags))
-        spectral_centroid = np.sum(freqs * fft_mags) / np.sum(fft_mags)
-
-        # 6. 低/高频能量比
-        low_freq_energy = np.sum(fft_mags[:high_freq_start])
-        low_high_energy_ratio = low_freq_energy / (high_freq_energy + 1e-8)
-
-        return {
-            'main_freq_energy_ratio': main_freq_energy_ratio,
-            'high_freq_energy_ratio': high_freq_energy_ratio,
-            'spectral_entropy': spectral_entropy,
-            'max_freq_idx': max_freq_idx,
-            'spectral_centroid': spectral_centroid,
-            'low_high_energy_ratio': low_high_energy_ratio
-        }

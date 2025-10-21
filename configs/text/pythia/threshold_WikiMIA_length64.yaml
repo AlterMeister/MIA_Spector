@@ -3,6 +3,15 @@ alpha: 0.01
 total: 100
 member: 55
 non_member: 45
+
+# === Global decision strategy (全局判决策略) ===
+require_both: false        # 只要过阈值即可判 Yes；置信度仅作为展示
+conf_floor_yes: 0.70       # 仍可保留，配合 require_both=false 只用于信息，不硬拦
+abstain_margin: 0.01       # 灰区变窄
+support_tail_low: 0.0001   # 放宽 OOD 拒识的下界
+support_tail_high: 0.9999  # 放宽 OOD 拒识的上界
+prior_pi: 0.03             # 略提高先验，减少“偏向No”的倾向
+
 thresholds:
   mink++:
     '0.1':

@@ -78,6 +78,17 @@ def decide_single(
     mode: str = "bestJ",
     abstain_margin: float | None = None
 ) -> Dict[str, Any]:
+    # ---------- 策略位（可放到 YAML 顶层；这里有默认） ----------
+    prior_pi        = float(cfg.get("prior_pi", 0.01))           # 现实先验：成员基率很低
+    train_prior_pi  = float(cfg.get("train_prior_pi", 0.5))      # Platt 训练时的先验（通常 0.5）
+    conf_floor_yes  = float(cfg.get("conf_floor_yes", 0.80))     # 判 Yes 的最小概率
+    require_both    = bool(cfg.get("require_both", True))        # 阈值&概率双满足才 Yes
+    tail_q_low      = float(cfg.get("support_tail_low", 0.001))  # 非成员分布支持域下界分位
+    tail_q_high     = float(cfg.get("support_tail_high", 0.999)) # 非成员分布支持域上界分位
+    if abstain_margin is None:
+        abstain_margin = cfg.get("abstain_margin", None)
+    # ------------------------------------------------------------
+    
     entry = _pick_entry(cfg, metric_group, subkey)
     direction = entry["direction"]
     sgn = _sign(direction)
@@ -97,6 +108,15 @@ def decide_single(
     def _sigmoid(z: float) -> float:
         try: return 1.0/(1.0+math.exp(-z))
         except OverflowError: return 0.0 if z < 0 else 1.0
+    def _logit(p : float) -> float:
+        p = min(max(p, 1e-6), 1-1e-6)
+        return math.log(p/(1-p))
+    def _interp_cdf(xs : np.array, cdf : np.ndarray, x : float) -> float:
+        if xs.size == 0: return float("nan")
+        i = np.searchsorted(xs, x, side="right")
+        if i == 0: return 0.0
+        if i >= xs.size: return 1.0
+        return float(cdf[i-1])
 
     conf = None
     calib = entry.get("calibrator")
@@ -108,11 +128,29 @@ def decide_single(
         xs = np.asarray(non.get("xs", []), dtype=float)
         cdf = np.asarray(non.get("cdf", []), dtype=float)
         if xs.size and xs.size == cdf.size:
-            i = np.searchsorted(xs, s_pos, side="right")
-            F = 0.0 if i == 0 else (1.0 if i >= xs.size else float(cdf[i-1]))
+            F = _interp_cdf(xs, cdf, s_pos)
             conf = max(0.0, 1.0 - F)
         else:
             conf = _sigmoid((s_pos - tau_pos)/0.1)
+
+    # OOD Check
+    try:
+        ec = entry.get("ecdf", {})
+        non = ec.get("non_member_posdir_ecdf", {})
+        xs = np.asarray(non.get("xs", []), dtype=float)
+        cdf = np.asarray(non.get("cdf", []), dtype=float)
+
+        if xs.size and xs.size == cdf.size:
+            F_nm = _interp_cdf(xs, cdf, s_pos)
+            if F_nm < tail_q_low or F_nm > tail_q_high:
+                decision = "Uncertain"
+                conf = min(conf, 0.5)
+    except Exception:
+        pass
+
+    # Two Proofs
+    if require_both and decision == "Yes" and conf < conf_floor_yes:
+        decision = "Uncertain"
 
     # 规范 subkey 输出
     subkey_out = (_ratio_str(subkey) if metric_group in ("mink++","mink")
