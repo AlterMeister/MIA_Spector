@@ -9,7 +9,7 @@ from app.config import get_settings
 
 settings = get_settings()
 
-EXEMPT_PATHS = {"/healthz", "/readyz", "/metrics", "/favicon.ico"}  # 不需要鉴权
+EXEMPT_PATHS = {"/healthz", "/readyz", "/metrics", "/favicon.ico","/docs","/openapi.json"}  # 不需要鉴权
 
 def _parse_keys():
     keys = [k.strip() for k in settings.API_KEYS.split(",") if k.strip()]

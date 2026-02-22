@@ -53,7 +53,7 @@ def compute_single_metric(
     except KeyError as e:
         if on_error == "nan":
             return float("nan")
-        raise KeyError(f"Not Found Key :（{mg}, {norm_subkey}）：{e}") from e
+        raise KeyError(f"Not Found Key: ({mg}, {norm_subkey}): {e}") from e
     except RuntimeError as e:
         if on_error == "nan":
             return float("nan")

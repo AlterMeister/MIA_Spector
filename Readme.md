@@ -54,7 +54,11 @@ MIA-Spector/
 
 ## ⚙️ Installation
 
-### Backend Environment
+### 🖥️ Windows & Docker Support
+
+For detailed instructions on running MIA-Spector on Windows 11 (via Docker or Native), please refer to [WINDOWS.md](WINDOWS.md).
+
+### Backend Environment (Linux/Mac)
 
 ```bash
 conda create -n mia-inspector python=3.11

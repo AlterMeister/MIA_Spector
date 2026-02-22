@@ -30,6 +30,7 @@ def load_tokenizer(model_name : str):
 
 def count_tokens(text : str, tokenizer, backend_tag : str) -> int:
     if backend_tag == "openai":
+
         # prepare for the openai
         return len(tokenizer.encode(text))  
     elif backend_tag == "hf":
